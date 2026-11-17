@@ -1,0 +1,13 @@
+WHMCS to PNLCS — version 0.1
+Extension maintainer: Monlam Makhampa
+Copyright (c) 2026 Monlam Makhampa for extension contributions.
+
+This extension includes and builds on existing PNLCS WHMCS importer code.
+PNLCS upstream: https://github.com/Panelica/pnlcs
+Copyright (c) 2026 Panelica
+Upstream license: MIT, retained in LICENSE.
+Development base: 29e9e331690bbd1cdbf0b68a295b5808518889c3
+
+Original upstream authorship and license are preserved. The extension version
+does not replace the PNLCS application version. This is not an official
+Panelica release.

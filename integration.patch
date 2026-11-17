@@ -1,0 +1,70 @@
+diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
+index 1e108643..a5bfca91 100644
+--- a/app/Providers/AppServiceProvider.php
++++ b/app/Providers/AppServiceProvider.php
+@@ -23,6 +23,13 @@ class AppServiceProvider extends ServiceProvider
+ {
+     public function register(): void
+     {
++        $this->app->bind(\App\Services\WhmcsImport\HistoryStore::class, fn ($app) => new \App\Services\WhmcsImport\HistoryStore(
++            $app['db']->connection(), $app['encrypter'],
++        ));
++        $this->app->bind(\App\Services\WhmcsImport\HistoryAttachments::class, fn ($app) => new \App\Services\WhmcsImport\HistoryAttachments(
++            $app->make(\App\Services\WhmcsImport\HistoryStore::class), $app['db']->connection(),
++            $app['encrypter'], storage_path('app/private/whmcs-history'),
++        ));
+         $this->app->bind(\App\Contracts\MailboxClientInterface::class, \App\Services\Mail\ImapMailboxClient::class);
+         // Phone verification: Twilio Verify when it is set up, otherwise codes
+         // of our own sent through an SmsSender an addon has bound; neither
+diff --git a/resources/views/admin/clients/show.blade.php b/resources/views/admin/clients/show.blade.php
+index 739fc01c..2456e222 100644
+--- a/resources/views/admin/clients/show.blade.php
++++ b/resources/views/admin/clients/show.blade.php
+@@ -68,6 +68,9 @@
+ </div>
+ 
+ {{-- Tab Navigation --}}
++@if(auth('admin')->user()?->role?->is_full_admin)
++<p><a class="btn btn-default btn-sm" href="{{ route('admin.clients.whmcs-history', $client) }}">{{ __('whmcs_history.title') }}</a></p>
++@endif
+ @php
+ $tabs = ['summary'=>__('admin.clients.tab_summary'),'services'=>__('admin.clients.tab_services'),'domains'=>__('admin.clients.tab_domains'),'invoices'=>__('admin.clients.tab_invoices'),'tickets'=>__('admin.clients.tab_tickets'),'notes'=>__('admin.clients.tab_notes'),'log'=>__('admin.clients.tab_log')];
+ @endphp
+diff --git a/resources/views/admin/whmcs-import/index.blade.php b/resources/views/admin/whmcs-import/index.blade.php
+index 5e73ba47..88af39d4 100644
+--- a/resources/views/admin/whmcs-import/index.blade.php
++++ b/resources/views/admin/whmcs-import/index.blade.php
+@@ -20,6 +20,9 @@
+     </div>
+ 
+     @include('admin.whmcs-import._steps', ['current' => 1])
++    @if(auth('admin')->user()?->role?->is_full_admin)
++        <p><a class="btn btn-default" href="{{ route('admin.whmcs-import.history') }}">{{ __('whmcs_history.title') }}</a></p>
++    @endif
+ 
+     @if($errors->has('connection'))
+         <div class="wi-problems" role="alert">
+diff --git a/routes/admin.php b/routes/admin.php
+index 11ec3846..5b85aba9 100644
+--- a/routes/admin.php
++++ b/routes/admin.php
+@@ -79,6 +79,10 @@
+         Route::post('clients', [ClientController::class, 'store'])->name('clients.store');
+     });
+     Route::middleware('admin.permission:view_clients')->group(function () {
++        Route::get('clients/{client}/whmcs-history', [\App\Http\Controllers\Admin\WhmcsHistoryController::class, 'client'])->name('clients.whmcs-history');
++        Route::get('clients/{client}/whmcs-history/{record}', [\App\Http\Controllers\Admin\WhmcsHistoryController::class, 'record'])->whereNumber('record')->name('clients.whmcs-history.record');
++        Route::get('clients/{client}/whmcs-history/{record}/attachments/{attachment}', [\App\Http\Controllers\Admin\WhmcsHistoryController::class, 'attachment'])->whereNumber(['record', 'attachment'])->name('clients.whmcs-history.attachment');
++        Route::post('clients/{client}/whmcs-history/link', [\App\Http\Controllers\Admin\WhmcsHistoryController::class, 'link'])->name('clients.whmcs-history.link');
+         Route::get('clients/{client}', [ClientController::class, 'show'])->name('clients.show');
+         Route::post('clients/{client}/personal-data', [ClientController::class, 'exportPersonalData'])->name('clients.personal-data');
+     });
+@@ -714,6 +718,8 @@
+ 
+     // WHMCS Import — manage_settings
+     Route::middleware('admin.permission:manage_settings')->prefix('whmcs-import')->name('whmcs-import.')->group(function () {
++        Route::get('history', [\App\Http\Controllers\Admin\WhmcsHistoryController::class, 'index'])->name('history');
++        Route::post('history/run', [\App\Http\Controllers\Admin\WhmcsHistoryController::class, 'run'])->middleware('throttle:10,1')->name('history.run');
+         Route::get('/', [WhmcsImportController::class, 'index'])->name('index');
+         Route::post('connection', [WhmcsImportController::class, 'saveConnection'])->name('connection.store');
+         Route::post('connection/test', [WhmcsImportController::class, 'testConnection'])->name('connection.test');
