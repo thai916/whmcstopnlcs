@@ -1,109 +1,107 @@
-# WHMCS to PNLCS
+# WHMCS → PNLCS migration utility
 
 **Version 0.1 · Maintained by Monlam Makhampa**
 
-Improved WHMCS import utility for PNLCS: secure historical archives,
-customer-profile integration, exact financial evidence, and verified attachment
-migration.
+An independent, auditable WHMCS 8.x → PNLCS admin migration utility. It is a
+flat-layout drop-in for an existing PNLCS application: copy the files at the
+paths shown below into the PNLCS root, run the four migrations, and clear caches.
+The original **Import WHMCS** utility is unchanged and remains available.
 
-> **Staging development release — not production-ready.** Native financial
-> writes remain disabled. This repository extends PNLCS's existing importer;
-> it is not a standalone application or a replacement importer.
+> This is a migration tool, not a go-live switch. A real import must only be
+> started after an administrator has reviewed the analysis, completed a
+> successful dry run, checked reconciliation, and explicitly approved it.
 
-## Features
+## Hard safety boundaries
 
-- Existing client, hosting-service, and domain importer included.
-- Historical field allowlists for 39 WHMCS categories.
-- Encrypted historical archive with source-ID mapping, dry runs, idempotence,
-  checkpoints, conflict detection, and reconciliation reports.
-- Full-administrator archive console and customer-profile access.
-- Explicit source/customer associations, shared-user ownership, safe pagination,
-  and cross-customer access checks.
-- Exact decimal financial evidence preserving original identifiers and raw dates,
-  without activating invoice collection, payment, refund, or provisioning actions.
-- Operator-verified attachment manifests, checksummed private transfers,
-  resumability, and authorized download-only access.
-- Synthetic migration, controller/view, migration-schema, and attachment tests.
-
-## Compatibility
-
-- PHP 8.4 and an existing PNLCS application with its Composer dependencies.
-- Developed against PNLCS `1.28.1-dev`, upstream commit
-  `29e9e331690bbd1cdbf0b68a295b5808518889c3`.
-- Historical catalog validated against a WHMCS 8.8 schema with 173 tables and
-  the `tbl` prefix.
-- Archive writes require an isolated destination database named with the suffix
-  `_whmcs_test` or `_whmcs_staging` (or SQLite memory for synthetic tests).
+- **Read-only source.** The connector exposes only SELECT/read/diagnostic
+  methods. A dedicated `SELECT`-only database user is required; cPanel-style
+  `GRANT SELECT ON \`db\`.*` is recognised and validated by actually reading.
+- **TLS never silently downgrades.** Modes are `verified`, `unverified`, and
+  explicit `none`; the first two fail closed without TLS, `none` needs admin
+  confirmation.
+- **No PNLCS automation.** Writes use the query builder, not Eloquent events:
+  no emails, provisioning, suspension, termination, registrar, gateway,
+  payment, or refund calls.
+- **Credentials are protected.** Source passwords are encrypted at rest and
+  excluded from input, logs, views, maps, and exports.
+- **Unsupported/sensitive history is archived** in a read-only archive with
+  tokens, card data, EPP codes, and password hashes redacted.
+- **Imported products and servers are inert.** Products are visible but retired
+  and non-orderable; servers are disabled with secrets omitted.
+- **Stable identity.** Original WHMCS IDs are persisted through mappings plus
+  `services.whmcs_service_id` and `transactions.whmcs_transaction_id`, so no
+  distinct source record collapses onto another.
+- **Failed runs are visible.** Batch exceptions mark the run `failed`, record a
+  finish time, and surface the last error in the live progress note.
 
 ## Package layout
 
+This repository uses a flat layout — paths are relative to the PNLCS root:
+
 ```text
-overlay/             Extension files, using paths relative to the PNLCS root
-integration.patch    Focused changes to existing PNLCS provider/routes/views
-extension.json       Release metadata
-VERSION              Extension version (not the PNLCS application version)
-NOTICE               Upstream attribution
+app/Http/Controllers/Admin/WhmcsToPnlcsController.php
+app/Models/WhmcsToPnlcs*.php
+app/Services/WhmcsToPnlcs/*.php
+database/migrations/2026_11_23_00000{1,2,3,4}_*.php
+docs/whmcs-to-pnlcs/{README.md,synthetic_source.php,verify.php}
+lang/en/whmcs_to_pnlcs.php
+resources/views/admin/whmcs-to-pnlcs/*.blade.php
+resources/views/admin/layouts/app.blade.php
+routes/admin.php
+VERSION            Extension version (0.1), not the PNLCS version
+LICENSE, NOTICE    Upstream attribution and license
 ```
 
-No `.env`, database exports, customer data, source credentials, attachment bytes,
-Composer dependencies, upstream Git history, or unrelated local changes are
-included.
+No `.env`, database exports, customer data, source credentials, Composer
+dependencies, or upstream Git history are included.
 
-## Installation: isolated staging only
+## Installation
 
-1. Back up and verify an isolated PNLCS staging copy. Review the code and
-   migrations before use. Do not install directly on a live billing system.
-2. From that PNLCS root, verify that the integration patch matches:
+1. Back up the PNLCS application and database first.
+2. Copy the files above into the PNLCS root, preserving paths. Review
+   `routes/admin.php` and `resources/views/admin/layouts/app.blade.php` against
+   local changes before overwriting them.
+3. Run `php artisan migrate --force`, then
+   `php artisan config:cache && php artisan route:cache && php artisan view:cache`.
+4. Open **Utilities → WHMCS to PNLCS** as a full administrator.
 
-   ```bash
-   git apply --check /path/to/whmcstopnlcs/integration.patch
-   ```
+## Wizard
 
-3. Review differences before copying the contents of `overlay/` into the PNLCS
-   root. Some files extend existing importer classes: preserve local changes and
-   merge manually if necessary. Never copy the extension `VERSION` over PNLCS's.
-4. Apply `integration.patch` from the PNLCS root. If the target application
-   differs from the documented upstream base, review and merge the patch rather
-   than forcing it.
-5. Review and apply only the archive migrations on the isolated staging
-   database. Do not blindly run all pending application migrations.
-   If archive tables were manually installed previously, reconcile migration
-   history before applying them.
-6. As a full administrator, open **Utilities → Import WHMCS → WHMCS historical
-   archive**. Use a consistent restored WHMCS backup and a SELECT-only account.
-   Start with a dry run.
+1. **Connect** — host, database, prefix, credentials, TLS mode, CA/SNI, timeout.
+2. **Source analysis** — version, readable tables, counts, grants, TLS evidence,
+   detected timezone with warning/override, and catalog `schema_issues`.
+3. **Destination & scope** — existing counts, scope groups, batch size, dry run.
+4. **Mapping** — review native vs archive classification and review flags.
+5. **Dry run** — processes batches without writing business rows, mappings, or
+   record logs.
+6. **Migrate** — after approval. The page auto-continues bounded batches until
+   completion; Pause/Retry/Cancel stop the loop.
+7. **Verify** — reconciliation of counts and financial totals.
+8. **Report** — protected CSV/JSON reports: summary, records, mappings,
+   financial, warnings.
 
-Read the [operating guide](overlay/docs/guides/whmcs-historical-archive.md) before
-importing or linking any customer history. The existing legacy native importer
-does not inherit all historical-archive isolation safeguards.
+## Verification
 
-## Tests
+Verification uses a disposable synthetic WHMCS source and a separate target
+database. It never needs a live WHMCS connection. Use a PHP binary with
+`pdo_mysql`:
 
-After integration, run from the PNLCS staging root:
-
-```bash
-php app/Services/WhmcsImport/tests/run.php
-php app/Services/WhmcsImport/tests/run.php /secure/whmcs-schema.sql
+```powershell
+$php = 'D:\Laragon\bin\php\php-8.4.28-Win32-vs17-x64\php.exe'
+& $php artisan config:clear
+$env:DB_DATABASE = 'pnlcs_wtptest_target'
+& $php artisan migrate --force
+& $php docs/whmcs-to-pnlcs/synthetic_source.php
+& $php docs/whmcs-to-pnlcs/verify.php
+Remove-Item Env:\DB_DATABASE
+& $php artisan config:cache
+& $php artisan route:cache
 ```
 
-Requires PDO SQLite, mbstring and OpenSSL. The tests use SQLite memory and a
-minimal framework container, not the normal application/MySQL bootstrap.
-Synthetic files and view caches are confined to unique temporary directories.
+Expected result: **69 passed, 0 failed**.
 
-Development validation: **112 assertions** without a source schema;
-**171 assertions** with the original schema. The source schema itself is not
-distributed. MySQL/MariaDB concurrency, full application middleware/browser
-integration, and real restored-backup behavior still require staging validation.
-
-## Deliberate limitations
-
-- No native historical invoice/payment/credit/refund projection.
-- No speculative credit/refund allocation, historical currency inference,
-  opaque PHP payload decoding, or timezone conversion.
-- No automatic attachment filename-convention discovery or malware scanning.
-- No production-write override, automatic cutover, rollback coordinator, global
-  unassigned-history browser, or background import coordinator.
-- Development formatting cleanup remains outstanding in some new PHP files.
+See [docs/whmcs-to-pnlcs/README.md](docs/whmcs-to-pnlcs/README.md) for the full
+operating notes, including real-source repair observations.
 
 ## Author and license
 

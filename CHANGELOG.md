@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1 — 2026-11-24 (flat-layout replacement)
+
+- Replace the overlay-based package with an independent, flat-layout
+  WHMCS → PNLCS admin migration utility at the PNLCS root paths.
+- Keep the original **Import WHMCS** utility unchanged.
+- Add read-only source analysis, TLS fail-closed modes, admin approval,
+  dry runs, batching, pause/resume, reconciliation, and protected reports.
+- Preserve native clients, contacts, groups, products, pricing, services,
+  domains, orders, invoices, items, transactions, tickets, replies, notes,
+  and servers; archive unsupported or sensitive history with redaction.
+- Persist original WHMCS identity for services and transactions so reused
+  references cannot collapse distinct source records.
+- Verify with a 69-check disposable synthetic-source regression suite and a
+  reviewed real-source import.
+
+This release replaces the earlier overlay-based `v0.1` package.
+
 ## 0.1 — 2026-11-17
 
 - Package the existing PNLCS importer and historical extension without
