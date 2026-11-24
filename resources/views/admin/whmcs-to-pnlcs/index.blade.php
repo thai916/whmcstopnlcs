@@ -17,6 +17,10 @@
 
     @include('admin.whmcs-to-pnlcs._steps', ['current' => 1])
 
+    <div class="wtp-note wtp-note--warn" role="note">
+        <i class="fas fa-network-wired"></i> {{ __('whmcs_to_pnlcs.connection.ip_note') }}
+    </div>
+
     @if($errors->has('connection'))
         <div class="wtp-note wtp-note--warn" role="alert">
             <i class="fas fa-triangle-exclamation"></i> {{ $errors->first('connection') }}

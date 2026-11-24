@@ -18,6 +18,9 @@
   prices to the shop currency while keeping original amounts for audit.
 - Verify with a 79-check disposable synthetic-source regression suite and a
   reviewed real-source import.
+- Add a first-page reminder to allowlist the PNLCS server IP on the WHMCS
+  database, describe the utility as a vibe-coded improved/extended Import WHMCS
+  tool, and expand the README installation instructions.
 
 This release replaces the earlier overlay-based `v0.1` package.
 

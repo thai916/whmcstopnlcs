@@ -3,7 +3,7 @@
 return [
     'title' => 'WHMCS to PNLCS',
     'menu_title' => 'WHMCS to PNLCS',
-    'description' => 'Comprehensive, auditable migration of clients, services, products, orders, invoices, payments, tickets and historical records from a read-only WHMCS source.',
+    'description' => "A vibe-coded, improved and extended version of PNLCS's built-in Import WHMCS utility. Comprehensive, auditable migration of clients, services, products, orders, invoices, payments, tickets and historical records from a read-only WHMCS source.",
     'dashboard' => 'Migration dashboard',
     'archive' => 'Historical archive',
 
@@ -26,6 +26,7 @@ return [
 
     'connection' => [
         'title' => 'WHMCS database connection',
+        'ip_note' => "Before you connect, add this PNLCS server's public IP address to the allowed hosts for the WHMCS MySQL user on the remote database server (in cPanel: MySQL Access Hosts). Without that allowlist the test will fail with “Access denied for user … @your-IP”.",
         'name' => 'Connection name (optional)',
         'host' => 'Hostname or IP',
         'port' => 'Port',

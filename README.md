@@ -3,9 +3,11 @@
 **Version 0.1 · Maintained by Monlam Makhampa**
 
 An independent, auditable WHMCS 8.x → PNLCS admin migration utility. It is a
-flat-layout drop-in for an existing PNLCS application: copy the files at the
-paths shown below into the PNLCS root, run the four migrations, and clear caches.
-The original **Import WHMCS** utility is unchanged and remains available.
+**vibe-coded, improved and extended version of PNLCS's built-in Import WHMCS
+utility**: a flat-layout drop-in for an existing PNLCS application. Copy the
+files at the paths shown below into the PNLCS root, run the migrations, and
+clear caches. The original **Import WHMCS** utility is unchanged and remains
+available.
 
 > This is a migration tool, not a go-live switch. A real import must only be
 > started after an administrator has reviewed the analysis, completed a
@@ -62,13 +64,35 @@ dependencies, or upstream Git history are included.
 
 ## Installation
 
-1. Back up the PNLCS application and database first.
-2. Copy the files above into the PNLCS root, preserving paths. Review
+1. Back up the PNLCS application files and database first.
+2. Clone this repository to a temporary folder (or download it as a ZIP), then
+   copy the files above into the PNLCS root, preserving paths. Review
    `routes/admin.php` and `resources/views/admin/layouts/app.blade.php` against
    local changes before overwriting them.
-3. Run `php artisan migrate --force`, then
-   `php artisan config:cache && php artisan route:cache && php artisan view:cache`.
-4. Open **Utilities → WHMCS to PNLCS** as a full administrator.
+3. On the WHMCS server, create a dedicated MySQL user with `SELECT` only and add
+   this PNLCS server's public IP to that user's allowed hosts (in cPanel:
+   **MySQL Access Hosts**). Without that allowlist, the connection test fails
+   with `Access denied for user ... @your-IP`. Use TLS where possible; choosing
+   `none` requires explicit administrator confirmation.
+4. Run the migrations and rebuild caches from the PNLCS root:
+
+   ```powershell
+   php artisan migrate --force
+   php artisan config:cache
+   php artisan route:cache
+   php artisan view:cache
+   ```
+
+   Use a PHP CLI binary with `pdo_mysql` enabled.
+5. Sign in as a full administrator and open **Utilities → WHMCS to PNLCS**.
+   Save a connection, test it, then follow the wizard. Dry run is the default;
+   a real import starts only after explicit approval.
+6. Optional: run the disposable regression suite in
+   `docs/whmcs-to-pnlcs/README.md`; it needs no live WHMCS connection.
+
+The `VERSION` file (`0.1`) is the migration utility version, not the PNLCS
+version. This repository overwrites the previous flat-layout release at the
+same paths.
 
 ## Wizard
 

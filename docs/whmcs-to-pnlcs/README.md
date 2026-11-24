@@ -47,6 +47,27 @@ The browser auto-run loop keeps each HTTP request bounded to one batch, but stop
 
 If a batch throws (for example, the source MySQL user is rejected), the run is marked **failed** with a finish time, the last source error is shown in the live note and in the Warnings card, and no further batches are requested. Fix the source connection, reload the Migrate page, and click **Start / continue** to resume from the stored checkpoint: the interruption warning is cleared as soon as a later batch succeeds. The source is never written to; only `SELECT` diagnostics are issued.
 
+## Installation
+
+This is a flat-layout drop-in for an existing PNLCS application. It does not replace or modify the original **Import WHMCS** utility.
+
+1. Back up the PNLCS application files and database.
+2. Clone or copy this repository to a temporary folder, then copy its files into the PNLCS root, preserving paths (`app/`, `database/`, `docs/`, `lang/`, `resources/`, `routes/`).
+3. Review `routes/admin.php` and `resources/views/admin/layouts/app.blade.php` against any local changes before overwriting them.
+4. On the WHMCS server, create a dedicated MySQL user with `SELECT` only and add this PNLCS server's public IP to that user's allowed hosts (cPanel → **MySQL Access Hosts**). Without that allowlist, connection tests fail with `Access denied for user ... @your-IP`.
+5. Run the migrations and rebuild caches:
+
+   ```powershell
+   php artisan migrate --force
+   php artisan config:cache
+   php artisan route:cache
+   php artisan view:cache
+   ```
+
+6. Sign in as a full administrator and open **Utilities → WHMCS to PNLCS**. Save a connection, test it, then follow the wizard. Dry run is the default; a real import only starts after explicit approval.
+
+Use a PHP CLI binary with `pdo_mysql` enabled. The repository's `VERSION` file (`0.1`) is the migration utility version, not the PNLCS version.
+
 ## Verification
 
 Verification uses a disposable synthetic WHMCS source and a separate migrated target database. It never needs a live WHMCS connection.
