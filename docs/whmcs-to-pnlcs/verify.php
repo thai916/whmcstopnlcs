@@ -64,6 +64,7 @@ if ($currentDb === $applicationDb && getenv('WTP_ALLOW_APP_DB') !== '1') {
 }
 
 $sourceDb = getenv('WTP_TEST_SOURCE_DB') ?: 'pnlcs_wtptest_source';
+
 $pass = 0;
 $fail = 0;
 
@@ -164,6 +165,10 @@ ok($afterClients === $baselineClients + 5, 'Five synthetic clients imported');
 ok(WhmcsToPnlcsMapping::where('entity', 'clients')->count() === 5, 'Five persistent client mappings stored');
 ok(WhmcsToPnlcsRecord::where('run_id', $real->id)->count() > 0, 'Per-record audit log written');
 ok(DB::table('invoices')->where('invoice_num', 'INV-1001')->exists(), 'Historical invoice number preserved');
+$invoiceTargets = WhmcsToPnlcsMapping::where('entity', 'invoices')->pluck('target_id');
+ok($invoiceTargets->count() === 2 && $invoiceTargets->unique()->count() === 2, 'Blank invoice numbers kept on distinct target rows');
+$autoInvoice = DB::table('invoices')->where('source_invoice_id', 2)->first();
+ok($autoInvoice !== null && $autoInvoice->invoice_num === '2', 'Blank WHMCS invoice number falls back to source row ID');
 ok(DB::table('clients')->where('email', 'client1@example.test')->exists(), 'Source client email preserved');
 ok(DB::table('clients')->where('email', 'client1@example.test')->whereNotNull('group_id')->whereNotNull('currency_id')->exists(), 'Client group and currency references resolved');
 ok(DB::table('contacts')->where('email', 'contact1@example.test')->whereNotNull('client_id')->exists(), 'Contact client reference resolved');
@@ -179,21 +184,44 @@ ok(DB::table('clients')->count() === $afterClients, 'Re-import did not duplicate
 ok(WhmcsToPnlcsRecord::where('run_id', $second->id)->where('status', 'skipped')->count() > 0, 'Re-import recorded idempotent skips');
 ok(DB::table('whmcs_to_pnlcs_archive')->count() >= 1, 'Unsupported history archived');
 
+// A PNLCS shop always has one default currency; the disposable migrations do
+// not seed one. Set it after currency import so derived shop prices can be
+// calculated. USD is the source's first currency and the shop default here.
+DB::table('currencies')->update(['is_default' => 0]);
+DB::table('currencies')->where('code', 'USD')->update(['is_default' => 1]);
+
 // Catalogue, services, domains and support history that were previously
 // missing because the catalog named non-existent WHMCS columns.
 $catalogue = $runner->prepare($connection, ['scope' => ['catalogue', 'support'], 'dry_run' => false, 'batch_size' => 2])['run'];
 $catalogueProgress = runToCompletion($runner, $catalogue);
 ok($catalogueProgress['status'] === 'completed', 'Catalogue migration completed all batches');
 ok(DB::table('products')->whereIn('name', ['Starter', 'Business'])->where('hidden', 0)->where('retired', 1)->count() === 2, 'Products imported visible but non-orderable');
+$shopCurrencyId = (int) DB::table('currencies')->where('is_default', 1)->value('id');
+$eurCurrencyId = (int) WhmcsToPnlcsMapping::where('entity', 'currencies')->where('source_id', '2')->value('target_id');
+$starterId = (int) WhmcsToPnlcsMapping::where('entity', 'products')->where('source_id', '1')->value('target_id');
+$businessId = (int) WhmcsToPnlcsMapping::where('entity', 'products')->where('source_id', '2')->value('target_id');
+ok($eurCurrencyId > 0 && $eurCurrencyId !== $shopCurrencyId, 'Non-default WHMCS currency mapped separately');
+$shopPrice = DB::table('pricing')->where('type', 'product')->where('currency_id', $shopCurrencyId)
+    ->where('rel_id', $starterId)->where('monthly', 21.74)->first();
+ok($shopPrice !== null, 'Non-default product price copied into the shop currency');
+ok($shopPrice !== null && (float) $shopPrice->annually === 217.39, 'Converted annual product price preserved');
+ok($shopPrice !== null && (int) $shopPrice->whmcs_source_currency_id === 2, 'Converted price records its source currency');
+ok(DB::table('pricing')->where('type', 'product')->where('currency_id', $shopCurrencyId)
+    ->where('rel_id', $businessId)->where('monthly', 15.00)->exists(), 'Shop-currency product price was not overwritten');
 $clientOneId = (int) DB::table('clients')->where('email', 'client1@example.test')->value('id');
 $serviceIds = DB::table('services')->where('client_id', $clientOneId)->orderBy('id')->pluck('id')->all();
 ok(count($serviceIds) === 3, 'All three services imported for the client');
 ok(count(array_unique($serviceIds)) === 3, 'Each service has its own target row');
 ok(DB::table('services')->where('client_id', $clientOneId)->where('status', 'active')->count() === 2, 'WHMCS domainstatus maps to active services');
 ok(DB::table('services')->where('client_id', $clientOneId)->where('status', 'suspended')->count() === 1, 'WHMCS suspended status preserved');
-ok(DB::table('services')->whereNotNull('whmcs_service_id')->count() === 3, 'Original WHMCS service IDs stored on target rows');
+ok(DB::table('services')->whereNotNull('whmcs_service_id')->count() === 4, 'Original WHMCS service IDs stored on target rows');
 $serviceMappings = WhmcsToPnlcsMapping::where('entity', 'services')->pluck('target_id');
 ok($serviceMappings->count() === $serviceMappings->unique()->count(), 'Service mappings point to distinct target IDs');
+$clientFiveId = (int) DB::table('clients')->where('email', 'client5@example.test')->value('id');
+$eurService = DB::table('services')->where('whmcs_service_id', 4)->first();
+ok($eurService !== null && (int) $eurService->client_id === $clientFiveId, 'EUR client service imported');
+ok($eurService !== null && (float) $eurService->amount === 108.70, 'Service price converted to the shop currency');
+ok($eurService !== null && (float) $eurService->whmcs_original_amount === 100.00, 'Original service price retained for audit');
 ok(DB::table('domains')->where('domain', 'example.test')->exists(), 'Domain imported');
 $ticket = DB::table('tickets')->where('tid', 'ABC-123')->first();
 ok($ticket !== null && (int) $ticket->department_id > 0, 'Ticket department reference resolved');
@@ -251,8 +279,8 @@ ok($brokenProgress['finished_at'] !== null, 'Failed run records a finish time');
 // Reconciliation and reports.
 $reconciliation = (new ReconciliationService($catalog))->run($real);
 $invoiceRow = collect($reconciliation['rows'] ?? [])->firstWhere('entity', 'invoices');
-ok($invoiceRow !== null && abs((float) $invoiceRow['source_total'] - 9.99) < 0.01, 'Source invoice total reconciled');
-ok($invoiceRow !== null && abs((float) $invoiceRow['target_total'] - 9.99) < 0.01, 'Destination invoice total reconciled');
+ok($invoiceRow !== null && abs((float) $invoiceRow['source_total'] - 59.99) < 0.01, 'Source invoice total reconciled');
+ok($invoiceRow !== null && abs((float) $invoiceRow['target_total'] - 59.99) < 0.01, 'Destination invoice total reconciled');
 $reportService = new ReportService(new ReconciliationService($catalog));
 $csv = $reportService->output($reportService->build($real, 'financial', 'csv'));
 ok(str_contains($csv, 'entity') && str_contains($csv, 'invoices'), 'CSV report generated');

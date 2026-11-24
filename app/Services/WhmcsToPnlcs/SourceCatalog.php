@@ -38,7 +38,8 @@ class SourceCatalog
                     'code' => 'code', 'prefix' => 'prefix', 'suffix' => 'suffix',
                     'format' => 'format', 'rate' => 'rate',
                 ],
-                'defaults' => ['is_default' => 0],
+                // Do not reset is_default on an existing shop currency. New
+                // rows inherit the database default (0).
             ],
             'client_groups' => [
                 'label' => 'Client groups', 'source' => 'clientgroups', 'target' => 'client_groups',
@@ -277,7 +278,8 @@ class SourceCatalog
                 'label' => 'Invoices', 'source' => 'invoices', 'target' => 'invoices',
                 'mode' => 'native', 'batch' => 100,
                 'fields' => [
-                    'invoice_num' => 'invoicenum', 'date' => 'date', 'due_date' => 'duedate',
+                    'source_invoice_id' => 'id', 'invoice_num' => 'invoicenum',
+                    'date' => 'date', 'due_date' => 'duedate',
                     'date_paid' => 'datepaid', 'subtotal' => 'subtotal', 'credit' => 'credit',
                     'tax' => 'tax', 'tax2' => 'tax2', 'total' => 'total',
                     'tax_rate' => 'taxrate', 'tax_rate2' => 'taxrate2', 'status' => 'status',

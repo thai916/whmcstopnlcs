@@ -75,7 +75,7 @@ class EntityImporter
         'server_group_links' => ['server_group_id', 'server_id'],
         'services' => ['whmcs_service_id'],
         'domains' => ['client_id', 'domain'],
-        'invoices' => ['client_id', 'invoice_num'],
+        'invoices' => ['source_invoice_id'],
         'invoice_items' => ['invoice_id', 'description', 'amount'],
         'transactions' => ['whmcs_transaction_id'],
         'credits' => ['client_id', 'date', 'description', 'amount'],
@@ -190,6 +190,16 @@ class EntityImporter
 
             $ctx->remember($entity, $sourceId, $targetId, $targetTable, $this->hash($columns));
 
+            if ($entity === 'pricing') {
+                try {
+                    $this->importShopPricingRow($row, $columns, $ctx, $targetId);
+                } catch (Throwable $e) {
+                    // The original source-currency price is already imported;
+                    // a failed derived copy must not fail the source row.
+                    $ctx->warn('Shop-currency price for pricing row '.$sourceId.' was not created: '.$e->getMessage());
+                }
+            }
+
             return $this->result($status, $targetId, null);
         } catch (Throwable $e) {
             return $this->result('failed', null, $this->safeError($e));
@@ -273,6 +283,42 @@ class EntityImporter
             if ($productId !== null) {
                 $columns['whmcs_product_name'] = DB::table('products')->where('id', $productId)->value('name');
             }
+
+            // WHMCS stores the service price in the client's currency. PNLCS
+            // prices everything in its shop currency, so convert the raw value
+            // for display/billing while retaining the original for audit.
+            $sourceCurrencyId = DB::table('clients')
+                ->where('id', $columns['client_id'] ?? null)
+                ->value('currency_id');
+            if ($sourceCurrencyId !== null) {
+                $columns['whmcs_currency_id'] = $sourceCurrencyId;
+                $columns['whmcs_original_amount'] = $columns['amount'] ?? null;
+                $columns['whmcs_original_first_payment_amount'] = $columns['first_payment_amount'] ?? null;
+
+                $shop = $this->shopCurrencyRate((int) $sourceCurrencyId);
+                if ($shop !== null) {
+                    foreach (['amount', 'first_payment_amount'] as $field) {
+                        if (($columns[$field] ?? null) !== null) {
+                            $columns[$field] = round((float) $columns[$field] * $shop['rate'], 2);
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($entity === 'pricing') {
+            // Keep the source currency next to each imported price. A converted
+            // copy for the shop currency is added after the row is written.
+            $columns['whmcs_source_currency_id'] = $row['currency'] ?? null;
+        }
+
+        if ($entity === 'invoices') {
+            // WHMCS displays the row ID as the invoice number when invoicenum is
+            // blank. Persist both so blank numbers cannot collapse distinct rows.
+            $columns['source_invoice_id'] = $row['id'] ?? $columns['source_invoice_id'] ?? null;
+            if (trim((string) ($columns['invoice_num'] ?? '')) === '') {
+                $columns['invoice_num'] = (string) ($row['id'] ?? '');
+            }
         }
 
         if ($entity === 'transactions') {
@@ -310,6 +356,114 @@ class EntityImporter
             $entity, $table, $columns,
             array_keys($definition['references'] ?? []),
             (array) ($definition['zero_dates'] ?? [])
+        );
+    }
+
+    /**
+     * Exchange rate from a WHMCS-imported currency to the PNLCS shop currency.
+     * PNLCS stores rates against its default currency; WHMCS rates are used
+     * unchanged, so the same division applies.
+     *
+     * @return array{default_id: int, rate: float}|null
+     */
+    protected function shopCurrencyRate(int $sourceCurrencyId): ?array
+    {
+        $shop = DB::table('currencies')->where('is_default', 1)->first(['id', 'rate']);
+        $source = DB::table('currencies')->where('id', $sourceCurrencyId)->first(['id', 'rate']);
+
+        if (! $shop || ! $source || (float) $source->rate <= 0) {
+            return null;
+        }
+
+        return [
+            'default_id' => (int) $shop->id,
+            'rate' => (float) $shop->rate / (float) $source->rate,
+        ];
+    }
+
+    /**
+     * The admin product form reads prices in the shop currency only. Keep the
+     * original source-currency row and add a clearly marked converted copy so
+     * imported prices are visible without changing their historical values.
+     *
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $columns
+     */
+    protected function importShopPricingRow(array $row, array $columns, ImportContext $ctx, int $sourceTargetId): void
+    {
+        $sourceCurrencyId = (int) ($row['currency'] ?? 0);
+        if ($sourceCurrencyId === 0 || empty($columns['rel_id'])) {
+            return;
+        }
+
+        $shop = $this->shopCurrencyRate($sourceCurrencyId);
+        if ($shop === null || (int) ($columns['currency_id'] ?? 0) === $shop['default_id']) {
+            return;
+        }
+
+        $derived = $columns;
+        $derived['currency_id'] = $shop['default_id'];
+        $derived['whmcs_source_currency_id'] = $sourceCurrencyId;
+        $derived['whmcs_converted_from_id'] = $sourceTargetId;
+
+        $amountFields = [
+            'monthly_setup', 'quarterly_setup', 'semiannually_setup',
+            'annually_setup', 'biennially_setup', 'triennially_setup',
+            'monthly', 'quarterly', 'semiannually', 'annually',
+            'biennially', 'triennially',
+        ];
+        foreach ($amountFields as $field) {
+            if (! array_key_exists($field, $derived) || $derived[$field] === null) {
+                continue;
+            }
+            $value = (float) $derived[$field];
+            // -1 is PNLCS's "cycle not sold" marker, not a price to convert.
+            if ($value < 0) {
+                continue;
+            }
+            $derived[$field] = round($value * $shop['rate'], 2);
+        }
+
+        $derived = array_intersect_key($derived, array_flip($this->columns('pricing')));
+        unset($derived['id']);
+
+        $candidates = DB::table('pricing')
+            ->where('type', $derived['type'] ?? null)
+            ->where('currency_id', $derived['currency_id'])
+            ->where('rel_id', $derived['rel_id'])
+            ->get();
+        $existing = $candidates->first(
+            fn ($row) => (int) ($row->whmcs_converted_from_id ?? 0) === $sourceTargetId
+        );
+        $collision = $candidates->first(
+            fn ($row) => (int) ($row->whmcs_converted_from_id ?? 0) !== $sourceTargetId
+        );
+        if ($existing === null && $collision !== null) {
+            // PNLCS pricing is unique per (type, currency, rel_id). Never
+            // overwrite a price already entered in the shop currency.
+            $ctx->warn('Shop-currency price for pricing row '.$ctx->sourceId($row['id'] ?? '')
+                .' was not created: that currency already has a price for this product.');
+
+            return;
+        }
+
+        if ($existing !== null) {
+            unset($derived['created_at']);
+            $derived['updated_at'] = now()->format('Y-m-d H:i:s');
+            $derivedId = (int) $existing->id;
+            DB::table('pricing')->where('id', $derivedId)->update($derived);
+        } else {
+            $derived['created_at'] ??= now()->format('Y-m-d H:i:s');
+            $derived['updated_at'] = $derived['updated_at'] ?? $derived['created_at'];
+            $derivedId = (int) DB::table('pricing')->insertGetId($derived);
+        }
+
+        $ctx->remember(
+            'pricing_shop',
+            $ctx->sourceId($row['id'] ?? '').'@shop'.$shop['default_id'],
+            $derivedId,
+            'pricing',
+            $this->hash($derived)
         );
     }
 

@@ -20,13 +20,15 @@ An independent, auditable migration tool for importing WHMCS 8.x data into PNLCS
 | Routes | `routes/admin.php`, group `admin.whmcs-to-pnlcs.*` (18 routes) under `admin.auth`, `admin.2fa`, `admin.permission:manage_settings` |
 | Services | `app/Services/WhmcsToPnlcs/` — connector, catalog, analyzer, safety guard, runner, importer, reconciliation, reports |
 | Models | `app/Models/WhmcsToPnlcs*.php` |
-| Schema | `database/migrations/2026_11_23_000001_create_whmcs_to_pnlcs_tables.php`, `...000002_add_whmcs_service_id_to_services.php`, `...000003_widen_whmcs_migration_target_columns.php`, `...000004_add_whmcs_transaction_id_to_transactions.php` |
+| Schema | `database/migrations/2026_11_23_000001_create_whmcs_to_pnlcs_tables.php`, `...000002_add_whmcs_service_id_to_services.php`, `...000003_widen_whmcs_migration_target_columns.php`, `...000004_add_whmcs_transaction_id_to_transactions.php`, `...2026_11_24_000001_add_whmcs_invoice_and_price_identity.php` |
 
 Utility tables: `whmcs_to_pnlcs_connections`, `whmcs_to_pnlcs_profiles`, `whmcs_to_pnlcs_runs`, `whmcs_to_pnlcs_records`, `whmcs_to_pnlcs_mappings`, `whmcs_to_pnlcs_archive`, `whmcs_to_pnlcs_reports`, `whmcs_to_pnlcs_logs`.
 
 `SourceCatalog` is the single source of truth for source tables, target tables, field maps, references (`source_refs`), dependency order, native/archive classification, and scope groups. Every reference must declare its source column; `docs/whmcs-to-pnlcs/verify.php` asserts this. `SourceAnalyzer` also reports `schema_issues` when a declared source column does not exist in the source table; `MigrationRunner` surfaces them as run warnings so a bad catalog cannot silently import NULLs.
 
-`EntityImporter` writes with the query builder, preserves original IDs through persistent mappings (`whmcs_service_id` on services, `whmcs_transaction_id` on transactions), maps WHMCS references to imported PNLCS IDs, respects PNLCS column defaults when source values are NULL, converts zero dates to valid sentinels, and omits source secrets. An unresolved NOT NULL reference is archived with the reason instead of being coerced to `0`.
+`EntityImporter` writes with the query builder, preserves original IDs through persistent mappings (`source_invoice_id` on invoices, `whmcs_service_id` on services, `whmcs_transaction_id` on transactions), maps WHMCS references to imported PNLCS IDs, respects PNLCS column defaults when source values are NULL, converts zero dates to valid sentinels, and omits source secrets. An unresolved NOT NULL reference is archived with the reason instead of being coerced to `0`.
+
+WHMCS often leaves `invoicenum` blank and displays the row ID as the invoice number. The importer now keys invoices by source row ID and falls back to that ID for display, so blank numbers cannot collapse distinct invoices onto one target row. Product prices are kept in their original WHMCS currency row and a converted copy is derived for the PNLCS shop currency (the only row the admin product form reads); the original currency and derived-row provenance stay in dedicated columns. Service prices are converted from the client's WHMCS currency into the shop currency while the original values are retained for audit. Existing shop-currency prices are never overwritten.
 
 ## Wizard
 
@@ -67,7 +69,7 @@ Remove-Item Env:\DB_DATABASE
 & $php artisan route:cache
 ```
 
-Expected result: **69 passed, 0 failed**.
+Expected result: **79 passed, 0 failed**.
 
 The scripts refuse unsafe targets:
 
@@ -75,11 +77,13 @@ The scripts refuse unsafe targets:
 - `synthetic_source.php` refuses to drop the application database unless `WTP_ALLOW_APP_DB=1`.
 - `WTP_TEST_SOURCE_DB` can rename the disposable source database.
 
-The suite covers connection diagnostics, cPanel grant recognition, TLS fail-closed behaviour, source timezone detection, catalog schema validation, dry-run purity, real import, ID mappings, reference resolution, idempotency, archive, pause/resume, failed-run visibility, reconciliation, reports, and absence of email/provisioning/activity-log side effects. It also covers real-source edge cases found during the first live run: blank client names, over-long phone numbers, reused transaction references, zero dates, blank ticket-reply bodies, WHMCS text flags, and distinct services sharing a client/domain/product name.
+The suite covers connection diagnostics, cPanel grant recognition, TLS fail-closed behaviour, source timezone detection, catalog schema validation, dry-run purity, real import, ID mappings, reference resolution, idempotency, archive, pause/resume, failed-run visibility, reconciliation, reports, and absence of email/provisioning/activity-log side effects. It also covers real-source edge cases found during the first live run: blank client names, over-long phone numbers, reused transaction references, zero dates, blank ticket-reply bodies, WHMCS text flags, and distinct services sharing a client/domain/product name. Later additions cover blank invoice numbers with row-ID fallback, non-default product currency prices with a derived shop-currency copy, currency conversion of service prices, and protection of an existing shop-currency price.
 
 ## Real-source repair notes
 
 After a dry run completes with `SCHEMA_ISSUES=[]`, the first real import can still archive rows whose source references are genuinely orphaned. A live run on the supplied WHMCS source produced these final counts: 108 clients, 29 products, 316 services, 1 domain, 13 tickets, 19 ticket replies, 6 ticket notes, and 525 transactions. Ten source transactions reference client IDs that do not exist in WHMCS (`10, 11, 14, 21, 23, 24, 27, 115, 116, 117`); they are kept in the read-only archive with the reason and are intentionally not imported with a fabricated client. Service and transaction mappings are one-to-one with their target rows so no distinct source record can collapse onto another.
+
+A later review found two live-data gaps caused by the first importer version: 694 source invoice mappings collapsed onto 105 target invoices because blank `invoicenum` values were used as the key, and product prices were attached to WHMCS currency 2 (`USD-whmcs-2`) while the PNLCS default currency is INR, so the admin product form showed no price. The fixes above are verified only against the disposable synthetic source/target suite. Repairing live data requires restoring read-only WHMCS source access for the runner's IP and taking a fresh full target backup before any destructive invoice rebuild; the old mappings alone cannot reconstruct the collapsed invoice rows or their dependent order/invoice-item/transaction/credit references.
 
 ## Administrative rule
 

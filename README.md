@@ -29,8 +29,12 @@ The original **Import WHMCS** utility is unchanged and remains available.
 - **Imported products and servers are inert.** Products are visible but retired
   and non-orderable; servers are disabled with secrets omitted.
 - **Stable identity.** Original WHMCS IDs are persisted through mappings plus
-  `services.whmcs_service_id` and `transactions.whmcs_transaction_id`, so no
-  distinct source record collapses onto another.
+  `invoices.source_invoice_id`, `services.whmcs_service_id`, and
+  `transactions.whmcs_transaction_id`, so no distinct source record collapses
+  onto another. Blank WHMCS invoice numbers display the source row ID.
+- **Price provenance.** Product prices keep their original WHMCS currency row
+  and gain a converted shop-currency copy; service prices are converted to the
+  shop currency while original values are retained for audit.
 - **Failed runs are visible.** Batch exceptions mark the run `failed`, record a
   finish time, and surface the last error in the live progress note.
 
@@ -43,6 +47,7 @@ app/Http/Controllers/Admin/WhmcsToPnlcsController.php
 app/Models/WhmcsToPnlcs*.php
 app/Services/WhmcsToPnlcs/*.php
 database/migrations/2026_11_23_00000{1,2,3,4}_*.php
+database/migrations/2026_11_24_000001_*.php
 docs/whmcs-to-pnlcs/{README.md,synthetic_source.php,verify.php}
 lang/en/whmcs_to_pnlcs.php
 resources/views/admin/whmcs-to-pnlcs/*.blade.php
@@ -98,7 +103,7 @@ Remove-Item Env:\DB_DATABASE
 & $php artisan route:cache
 ```
 
-Expected result: **69 passed, 0 failed**.
+Expected result: **79 passed, 0 failed**.
 
 See [docs/whmcs-to-pnlcs/README.md](docs/whmcs-to-pnlcs/README.md) for the full
 operating notes, including real-source repair observations.

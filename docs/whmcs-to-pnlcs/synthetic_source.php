@@ -203,12 +203,22 @@ $pdo->exec("INSERT INTO tblcontacts (userid,firstname,lastname,email,subaccount,
 $pdo->exec("INSERT INTO tblproductgroups (name,hidden,`order`) VALUES ('Hosting',0,1)");
 $pdo->exec("INSERT INTO tblproducts (gid,name,description,type,hidden,paytype,autosetup,servertype,tax,`order`,servergroup) VALUES (1,'Starter','Small plan','hosting',0,'recurring','on','cpanel',1,1,0)");
 $pdo->exec("INSERT INTO tblproducts (gid,name,description,type,hidden,paytype,autosetup,servertype,tax,`order`,servergroup) VALUES (1,'Business','Bigger plan','hosting',0,'recurring','on','cpanel',1,2,0)");
-$pdo->exec("INSERT INTO tblpricing (type,relid,currency,msetupfee,monthly,quarterly,semiannually,annually,biennially,triennially) VALUES ('product',1,1,10.00,9.99,28.00,55.00,99.00,180.00,250.00)");
+// Product 1 is priced in a non-default currency. A shop-currency copy must be
+// derived so the admin product form shows a price.
+$pdo->exec("INSERT INTO tblpricing (type,relid,currency,msetupfee,monthly,quarterly,semiannually,annually,biennially,triennially) VALUES ('product',1,2,0.00,20.00,0.00,0.00,200.00,-1.00,-1.00)");
+// Product 2 is already priced in the shop currency and must not be overwritten.
+$pdo->exec("INSERT INTO tblpricing (type,relid,currency,msetupfee,monthly,quarterly,semiannually,annually,biennially,triennially) VALUES ('product',2,1,10.00,15.00,45.00,90.00,160.00,300.00,400.00)");
 $pdo->exec("INSERT INTO tblhosting (userid,packageid,server,orderid,domain,username,qty,firstpaymentamount,amount,billingcycle,nextduedate,regdate,domainstatus,diskusage,disklimit,bwusage,bwlimit) VALUES (1,1,0,1,'example.test','user1',1,9.99,9.99,'Monthly','2026-12-01','2023-01-01','Active',100,1000,500,5000)");
 $pdo->exec("INSERT INTO tblhosting (userid,packageid,server,orderid,domain,username,qty,firstpaymentamount,amount,billingcycle,nextduedate,regdate,domainstatus,diskusage,disklimit,bwusage,bwlimit) VALUES (1,2,0,1,'example.test','user2',1,19.99,19.99,'Monthly','2026-12-01','2023-01-01','Active',200,2000,600,6000)");
 $pdo->exec("INSERT INTO tblhosting (userid,packageid,server,orderid,domain,username,qty,firstpaymentamount,amount,billingcycle,nextduedate,regdate,domainstatus,diskusage,disklimit,bwusage,bwlimit) VALUES (1,1,0,1,'','user3',1,9.99,9.99,'Monthly','2026-12-01','2023-01-01','Suspended',0,1000,0,5000)");
+// Client 5 uses EUR; its service price must be converted to the shop currency
+// while the original amount stays available for audit.
+$pdo->exec("INSERT INTO tblhosting (userid,packageid,server,orderid,domain,username,qty,firstpaymentamount,amount,billingcycle,nextduedate,regdate,domainstatus,diskusage,disklimit,bwusage,bwlimit) VALUES (5,1,0,1,'five.test','user5',1,50.00,100.00,'Monthly','2026-12-01','2023-01-05','Active',100,1000,500,5000)");
 $pdo->exec("INSERT INTO tblorders (ordernum,userid,`date`,amount,paymentmethod,invoiceid,status) VALUES ('WHMCS-1001',1,'2023-01-01',9.99,'paypal',1,'Active')");
 $pdo->exec("INSERT INTO tblinvoices (userid,invoicenum,`date`,duedate,datepaid,subtotal,tax,total,taxrate,status,paymentmethod) VALUES (1,'INV-1001','2023-01-01','2023-01-15','2023-01-02 12:00:00',9.99,0.00,9.99,0.000,'Paid','paypal')");
+// WHMCS leaves invoicenum blank when the operator uses the automatic number.
+// The source row ID (2) is the displayed invoice number.
+$pdo->exec("INSERT INTO tblinvoices (userid,invoicenum,`date`,duedate,datepaid,subtotal,tax,total,taxrate,status,paymentmethod) VALUES (5,'','2023-01-05','2023-01-20','2023-01-06 12:00:00',50.00,0.00,50.00,0.000,'Paid','bank')");
 $pdo->exec("INSERT INTO tblinvoiceitems (invoiceid,userid,type,relid,description,amount,taxed,duedate) VALUES (1,1,'Hosting',1,'Starter plan - monthly',9.99,0,NULL)");
 $pdo->exec("INSERT INTO tblaccounts (userid,invoiceid,gateway,`date`,description,amountin,amountout,fees,rate,transid,currency) VALUES (1,1,'paypal','2023-01-02','Invoice INV-1001',9.99,0,0.25,1.00000,'TXN-1001',1)");
 $pdo->exec("INSERT INTO tblaccounts (userid,invoiceid,gateway,`date`,description,amountin,amountout,fees,rate,transid,currency) VALUES (5,0,'bank','2023-01-03','Company Five payment',50.00,0,0.00,1.00000,'TXN-1005',1)");

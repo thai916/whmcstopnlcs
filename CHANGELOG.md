@@ -10,9 +10,13 @@
 - Preserve native clients, contacts, groups, products, pricing, services,
   domains, orders, invoices, items, transactions, tickets, replies, notes,
   and servers; archive unsupported or sensitive history with redaction.
-- Persist original WHMCS identity for services and transactions so reused
-  references cannot collapse distinct source records.
-- Verify with a 69-check disposable synthetic-source regression suite and a
+- Persist original WHMCS identity for invoices, services, and transactions so
+  reused or blank references cannot collapse distinct source records; blank
+  WHMCS invoice numbers display the source row ID.
+- Keep product prices in their original WHMCS currency and derive a converted
+  shop-currency copy; convert service prices to the shop currency while keeping
+  original amounts for audit.
+- Verify with a 79-check disposable synthetic-source regression suite and a
   reviewed real-source import.
 
 This release replaces the earlier overlay-based `v0.1` package.
