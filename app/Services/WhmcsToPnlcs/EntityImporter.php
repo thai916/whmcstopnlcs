@@ -391,13 +391,17 @@ class EntityImporter
      */
     protected function importShopPricingRow(array $row, array $columns, ImportContext $ctx, int $sourceTargetId): void
     {
+        // WHMCS currency IDs are not PNLCS currency IDs. The imported row's
+        // currency_id is the mapped PNLCS row whose rate must be used; keep the
+        // raw WHMCS ID only as provenance.
         $sourceCurrencyId = (int) ($row['currency'] ?? 0);
-        if ($sourceCurrencyId === 0 || empty($columns['rel_id'])) {
+        $sourceTargetCurrencyId = (int) ($columns['currency_id'] ?? 0);
+        if ($sourceCurrencyId === 0 || $sourceTargetCurrencyId === 0 || empty($columns['rel_id'])) {
             return;
         }
 
-        $shop = $this->shopCurrencyRate($sourceCurrencyId);
-        if ($shop === null || (int) ($columns['currency_id'] ?? 0) === $shop['default_id']) {
+        $shop = $this->shopCurrencyRate($sourceTargetCurrencyId);
+        if ($shop === null || $sourceTargetCurrencyId === $shop['default_id']) {
             return;
         }
 

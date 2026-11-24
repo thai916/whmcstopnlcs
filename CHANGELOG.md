@@ -14,8 +14,8 @@
   reused or blank references cannot collapse distinct source records; blank
   WHMCS invoice numbers display the source row ID.
 - Keep product prices in their original WHMCS currency and derive a converted
-  shop-currency copy; convert service prices to the shop currency while keeping
-  original amounts for audit.
+  shop-currency copy using the mapped PNLCS currency rate; convert service
+  prices to the shop currency while keeping original amounts for audit.
 - Verify with a 79-check disposable synthetic-source regression suite and a
   reviewed real-source import.
 
