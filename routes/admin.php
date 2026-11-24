@@ -737,6 +737,7 @@ Route::middleware(['admin.auth', 'admin.2fa'])->prefix('admin')->name('admin.')-
         Route::get('/', [WhmcsToPnlcsController::class, 'index'])->name('index');
         Route::post('connection/test', [WhmcsToPnlcsController::class, 'testConnection'])->name('connection.test');
         Route::post('connection', [WhmcsToPnlcsController::class, 'saveConnection'])->name('connection.store');
+        Route::post('connection/{connection}/currencies', [WhmcsToPnlcsController::class, 'saveCurrencies'])->name('connection.currencies');
         Route::get('connection/{connection}/analyze', [WhmcsToPnlcsController::class, 'analyze'])->name('analyze');
         Route::post('connection/{connection}/prepare', [WhmcsToPnlcsController::class, 'prepare'])->name('prepare');
         Route::post('connection/{connection}/profile', [WhmcsToPnlcsController::class, 'saveProfile'])->name('profile.store');

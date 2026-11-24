@@ -133,6 +133,9 @@ try {
     ok(($analysis['counts']['clients'] ?? 0) === 5, 'Source client count read correctly');
     ok(($analysis['timezone']['source_iana'] ?? null) === 'Europe/Warsaw', 'Source timezone detected');
     ok($analysis['grant_coverage']['status'] === 'full', 'Grant coverage reported as full');
+    $sourceCurrencyOptions = $analyzer->currencies($connector, 'tbl');
+    ok(count($sourceCurrencyOptions) === 2, 'First-page WHMCS currency options read from source');
+    ok(in_array('EUR', array_column($sourceCurrencyOptions, 'code'), true), 'WHMCS EUR option listed for selection');
     ok(
         ($analysis['schema_issues'] ?? []) === [],
         'Every declared catalog source column exists'.($analysis['schema_issues'] ? ': '.implode('; ', $analysis['schema_issues']) : '')
@@ -222,6 +225,52 @@ $eurService = DB::table('services')->where('whmcs_service_id', 4)->first();
 ok($eurService !== null && (int) $eurService->client_id === $clientFiveId, 'EUR client service imported');
 ok($eurService !== null && (float) $eurService->amount === 108.70, 'Service price converted to the shop currency');
 ok($eurService !== null && (float) $eurService->whmcs_original_amount === 100.00, 'Original service price retained for audit');
+
+// Explicit currency pair selected on the first wizard page. EUR (source ID 2)
+// maps to a PNLCS currency row whose rate is 0.92; the target row below has
+// rate 2.0, so 20 EUR becomes 43.48 and 100 EUR becomes 217.39.
+$targetCurrencyId = (int) DB::table('currencies')->insertGetId([
+    'code' => 'TARGET',
+    'prefix' => '',
+    'suffix' => '',
+    'format' => 1,
+    'rate' => 2.00000,
+    'is_default' => 0,
+    'created_at' => now(),
+    'updated_at' => now(),
+]);
+$currencyConnection = WhmcsToPnlcsConnection::create([
+    'name' => 'Synthetic source with explicit currencies',
+    'host' => (string) $cfg['host'],
+    'port' => (int) $cfg['port'],
+    'database' => $sourceDb,
+    'username' => (string) $cfg['username'],
+    'password' => (string) $cfg['password'],
+    'prefix' => 'tbl',
+    'tls_mode' => 'none',
+    'timeout' => 10,
+    'whmcs_currency_id' => 2,
+    'pnlcs_currency_id' => $targetCurrencyId,
+]);
+$explicitRun = $runner->prepare($currencyConnection, [
+    'scope' => ['catalogue'], 'dry_run' => false, 'batch_size' => 2,
+    'duplicate_strategy' => 'update',
+])['run'];
+ok(($explicitRun->options['whmcs_currency_id'] ?? null) === 2, 'Run stores selected WHMCS currency');
+ok(($explicitRun->options['pnlcs_currency_id'] ?? null) === $targetCurrencyId, 'Run stores selected PNLCS currency');
+$explicitProgress = runToCompletion($runner, $explicitRun);
+ok($explicitProgress['status'] === 'completed', 'Explicit currency migration completed');
+ok(DB::table('pricing')->where('type', 'product')->where('currency_id', $targetCurrencyId)
+    ->where('rel_id', $starterId)->where('monthly', 43.48)->where('annually', 434.78)
+    ->where('whmcs_source_currency_id', 2)->whereNotNull('whmcs_converted_from_id')->exists(),
+    'Product price converted into the selected PNLCS currency');
+ok(DB::table('pricing')->where('type', 'product')->where('currency_id', $shopCurrencyId)
+    ->where('rel_id', $starterId)->where('monthly', 21.74)->exists(),
+    'Existing default-currency product price was not overwritten');
+$explicitService = DB::table('services')->where('whmcs_service_id', 4)->first();
+ok($explicitService !== null && (float) $explicitService->amount === 217.39, 'Service price converted into the selected PNLCS currency');
+ok($explicitService !== null && (float) $explicitService->whmcs_original_amount === 100.00, 'Original service price retained after explicit conversion');
+
 ok(DB::table('domains')->where('domain', 'example.test')->exists(), 'Domain imported');
 $ticket = DB::table('tickets')->where('tid', 'ABC-123')->first();
 ok($ticket !== null && (int) $ticket->department_id > 0, 'Ticket department reference resolved');

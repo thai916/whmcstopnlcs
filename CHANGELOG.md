@@ -14,9 +14,13 @@
   reused or blank references cannot collapse distinct source records; blank
   WHMCS invoice numbers display the source row ID.
 - Keep product prices in their original WHMCS currency and derive a converted
-  shop-currency copy using the mapped PNLCS currency rate; convert service
-  prices to the shop currency while keeping original amounts for audit.
-- Verify with a 79-check disposable synthetic-source regression suite and a
+  copy in the PNLCS currency selected on page 1 using the mapped PNLCS currency
+  rate; convert service prices to that currency while keeping original amounts
+  for audit.
+- Add WHMCS and PNLCS currency selectors to the first migration page, store the
+  pair on each connection and run, and keep the default-currency behaviour when
+  no pair is selected.
+- Verify with an 88-check disposable synthetic-source regression suite and a
   reviewed real-source import.
 - Add a first-page reminder to allowlist the PNLCS server IP on the WHMCS
   database, describe the utility as a vibe-coded improved/extended Import WHMCS

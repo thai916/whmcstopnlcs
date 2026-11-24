@@ -11,6 +11,7 @@ class WhmcsToPnlcsConnection extends Model
 
     protected $fillable = [
         'name', 'host', 'port', 'database', 'username', 'password', 'prefix',
+        'whmcs_currency_id', 'pnlcs_currency_id',
         'tls_mode', 'timeout', 'ca_path', 'tls_hostname',
         'last_tls_active', 'last_identity_verified', 'last_tested_at', 'last_diagnostics',
     ];
@@ -21,6 +22,8 @@ class WhmcsToPnlcsConnection extends Model
             'password' => EncryptedValue::class,
             'port' => 'integer',
             'timeout' => 'integer',
+            'whmcs_currency_id' => 'integer',
+            'pnlcs_currency_id' => 'integer',
             'last_tls_active' => 'boolean',
             'last_identity_verified' => 'boolean',
             'last_tested_at' => 'datetime',
@@ -56,6 +59,8 @@ class WhmcsToPnlcsConnection extends Model
             'database' => $this->database,
             'username' => $this->username,
             'prefix' => $this->prefix,
+            'whmcs_currency_id' => $this->whmcs_currency_id,
+            'pnlcs_currency_id' => $this->pnlcs_currency_id,
             'tls_mode' => $this->tls_mode,
             'timeout' => $this->timeout,
         ];

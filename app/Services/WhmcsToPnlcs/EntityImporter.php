@@ -284,22 +284,30 @@ class EntityImporter
                 $columns['whmcs_product_name'] = DB::table('products')->where('id', $productId)->value('name');
             }
 
-            // WHMCS stores the service price in the client's currency. PNLCS
-            // prices everything in its shop currency, so convert the raw value
-            // for display/billing while retaining the original for audit.
+            // WHMCS stores the service price in the client's currency. Convert
+            // it into the target currency chosen on the first wizard page (or
+            // the PNLCS default when no explicit pair was selected), while
+            // retaining the original value for audit.
             $sourceCurrencyId = DB::table('clients')
                 ->where('id', $columns['client_id'] ?? null)
                 ->value('currency_id');
+            $selectedSourceId = $this->selectedWhmcsCurrencyId($ctx);
+            $selectedSourceTargetId = $selectedSourceId !== null
+                ? $ctx->targetId('currencies', $selectedSourceId)
+                : null;
+            if ($sourceCurrencyId === null && $selectedSourceTargetId !== null) {
+                $sourceCurrencyId = $selectedSourceTargetId;
+            }
             if ($sourceCurrencyId !== null) {
                 $columns['whmcs_currency_id'] = $sourceCurrencyId;
                 $columns['whmcs_original_amount'] = $columns['amount'] ?? null;
                 $columns['whmcs_original_first_payment_amount'] = $columns['first_payment_amount'] ?? null;
 
-                $shop = $this->shopCurrencyRate((int) $sourceCurrencyId);
-                if ($shop !== null) {
+                $conversion = $this->conversionRate($ctx, (int) $sourceCurrencyId);
+                if ($conversion !== null) {
                     foreach (['amount', 'first_payment_amount'] as $field) {
                         if (($columns[$field] ?? null) !== null) {
-                            $columns[$field] = round((float) $columns[$field] * $shop['rate'], 2);
+                            $columns[$field] = round((float) $columns[$field] * $conversion['rate'], 2);
                         }
                     }
                 }
@@ -359,25 +367,56 @@ class EntityImporter
         );
     }
 
-    /**
-     * Exchange rate from a WHMCS-imported currency to the PNLCS shop currency.
-     * PNLCS stores rates against its default currency; WHMCS rates are used
-     * unchanged, so the same division applies.
-     *
-     * @return array{default_id: int, rate: float}|null
-     */
-    protected function shopCurrencyRate(int $sourceCurrencyId): ?array
+    protected function selectedWhmcsCurrencyId(ImportContext $ctx): ?int
     {
-        $shop = DB::table('currencies')->where('is_default', 1)->first(['id', 'rate']);
-        $source = DB::table('currencies')->where('id', $sourceCurrencyId)->first(['id', 'rate']);
+        $id = $ctx->options['whmcs_currency_id'] ?? null;
 
-        if (! $shop || ! $source || (float) $source->rate <= 0) {
+        return empty($id) ? null : (int) $id;
+    }
+
+    protected function selectedPnlcsCurrencyId(ImportContext $ctx): ?int
+    {
+        $id = $ctx->options['pnlcs_currency_id'] ?? null;
+
+        return empty($id) ? null : (int) $id;
+    }
+
+    /** @return object{id: int, rate: float}|null */
+    protected function targetCurrency(ImportContext $ctx): ?object
+    {
+        $selected = $this->selectedPnlcsCurrencyId($ctx);
+        if ($selected !== null) {
+            $row = DB::table('currencies')->where('id', $selected)->first(['id', 'rate']);
+            if ($row !== null) {
+                return $row;
+            }
+        }
+
+        return DB::table('currencies')->where('is_default', 1)->orderBy('id')->first(['id', 'rate']);
+    }
+
+    /**
+     * Rate from a mapped PNLCS currency row to the selected PNLCS currency.
+     *
+     * PNLCS stores every rate against its default currency, so converting
+     * between two rows is target_rate / source_rate. Considering the selected
+     * WHMCS currency here is done by the caller through the persistent import
+     * mapping; raw WHMCS IDs are never used as PNLCS currency IDs.
+     *
+     * @return array{target_id: int, rate: float}|null
+     */
+    protected function conversionRate(ImportContext $ctx, int $sourceTargetCurrencyId): ?array
+    {
+        $source = DB::table('currencies')->where('id', $sourceTargetCurrencyId)->first(['id', 'rate']);
+        $target = $this->targetCurrency($ctx);
+
+        if (! $source || ! $target || (float) $source->rate <= 0 || (float) $target->rate <= 0) {
             return null;
         }
 
         return [
-            'default_id' => (int) $shop->id,
-            'rate' => (float) $shop->rate / (float) $source->rate,
+            'target_id' => (int) $target->id,
+            'rate' => (float) $target->rate / (float) $source->rate,
         ];
     }
 
@@ -400,13 +439,21 @@ class EntityImporter
             return;
         }
 
-        $shop = $this->shopCurrencyRate($sourceTargetCurrencyId);
-        if ($shop === null || $sourceTargetCurrencyId === $shop['default_id']) {
+        // When an administrator selected a specific WHMCS currency on page 1,
+        // only rows in that currency get a converted copy. Without a selection,
+        // the previous behaviour is preserved for every non-target currency.
+        $selectedSourceId = $this->selectedWhmcsCurrencyId($ctx);
+        if ($selectedSourceId !== null && $sourceCurrencyId !== $selectedSourceId) {
+            return;
+        }
+
+        $conversion = $this->conversionRate($ctx, $sourceTargetCurrencyId);
+        if ($conversion === null || $sourceTargetCurrencyId === $conversion['target_id']) {
             return;
         }
 
         $derived = $columns;
-        $derived['currency_id'] = $shop['default_id'];
+        $derived['currency_id'] = $conversion['target_id'];
         $derived['whmcs_source_currency_id'] = $sourceCurrencyId;
         $derived['whmcs_converted_from_id'] = $sourceTargetId;
 
@@ -425,7 +472,7 @@ class EntityImporter
             if ($value < 0) {
                 continue;
             }
-            $derived[$field] = round($value * $shop['rate'], 2);
+            $derived[$field] = round($value * $conversion['rate'], 2);
         }
 
         $derived = array_intersect_key($derived, array_flip($this->columns('pricing')));
@@ -464,7 +511,7 @@ class EntityImporter
 
         $ctx->remember(
             'pricing_shop',
-            $ctx->sourceId($row['id'] ?? '').'@shop'.$shop['default_id'],
+            $ctx->sourceId($row['id'] ?? '').'@target'.$conversion['target_id'],
             $derivedId,
             'pricing',
             $this->hash($derived)

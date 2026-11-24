@@ -77,6 +77,14 @@ class MigrationRunner
                 : 'skip',
             'timezone_override' => $input['timezone_override'] ?? null,
             'no_tls_confirmation' => ($connection->tls_mode ?? '') === 'none' || (bool) ($input['allow_insecure'] ?? false),
+            // Stored on each run so a resumed batch uses the same conversion
+            // pair even if the connection is edited later.
+            'whmcs_currency_id' => $connection->whmcs_currency_id !== null
+                ? (int) $connection->whmcs_currency_id
+                : null,
+            'pnlcs_currency_id' => $connection->pnlcs_currency_id !== null
+                ? (int) $connection->pnlcs_currency_id
+                : null,
         ];
 
         $run = WhmcsToPnlcsRun::create([

@@ -69,6 +69,37 @@
                             <label for="wtp-prefix">{{ __('whmcs_to_pnlcs.connection.prefix') }}</label>
                             <input id="wtp-prefix" name="prefix" value="{{ old('prefix', 'tbl') }}" autocomplete="off">
                         </div>
+                        <div class="wtp-field wtp-span2">
+                            <div class="wtp-note wtp-note--info">
+                                <i class="fas fa-coins"></i> {{ __('whmcs_to_pnlcs.connection.currency_title') }} — {{ __('whmcs_to_pnlcs.connection.currency_help') }}
+                            </div>
+                        </div>
+                        <div class="wtp-field">
+                            <label for="wtp-whmcs-currency">{{ __('whmcs_to_pnlcs.connection.whmcs_currency') }}</label>
+                            @if($sourceCurrencies)
+                                <select id="wtp-whmcs-currency" name="whmcs_currency_id">
+                                    @foreach($sourceCurrencies as $currency)
+                                        <option value="{{ $currency['id'] }}" @if((string) old('whmcs_currency_id', $currency['is_default'] ? $currency['id'] : '') === (string) $currency['id']) selected @endif>
+                                            {{ $currency['code'] }} (ID {{ $currency['id'] }})
+                                        </option>
+                                    @endforeach
+                                </select>
+                            @else
+                                <select id="wtp-whmcs-currency" disabled>
+                                    <option>{{ __('whmcs_to_pnlcs.connection.currency_test_first') }}</option>
+                                </select>
+                            @endif
+                        </div>
+                        <div class="wtp-field">
+                            <label for="wtp-pnlcs-currency">{{ __('whmcs_to_pnlcs.connection.pnlcs_currency') }}</label>
+                            <select id="wtp-pnlcs-currency" name="pnlcs_currency_id">
+                                @foreach($pnlcsCurrencies as $currency)
+                                    <option value="{{ $currency['id'] }}" @if((string) old('pnlcs_currency_id', $defaultPnlcsCurrencyId) === (string) $currency['id']) selected @endif>
+                                        {{ $currency['code'] }} (rate {{ $currency['rate'] }})
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
                         <div class="wtp-field">
                             <label for="wtp-username">{{ __('whmcs_to_pnlcs.connection.username') }}</label>
                             <input id="wtp-username" name="username" value="{{ old('username') }}" required autocomplete="off">
@@ -131,6 +162,26 @@
                             <div class="wtp-conn__body">
                                 <div class="wtp-conn__name">{{ $connection->name ?: $connection->database }}</div>
                                 <div class="wtp-conn__meta">{{ $connection->host }}:{{ $connection->port }} · {{ $connection->username }} · {{ strtoupper($connection->tls_mode) }}</div>
+                                @if(! empty($savedSourceCurrencies[$connection->id]))
+                                    <form method="post" action="{{ route('admin.whmcs-to-pnlcs.connection.currencies', $connection) }}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+                                        @csrf
+                                        <label class="sr-only" for="wtp-saved-whmcs-{{ $connection->id }}">{{ __('whmcs_to_pnlcs.connection.whmcs_currency') }}</label>
+                                        <select id="wtp-saved-whmcs-{{ $connection->id }}" name="whmcs_currency_id" style="max-width:150px">
+                                            @foreach($savedSourceCurrencies[$connection->id] as $currency)
+                                                <option value="{{ $currency['id'] }}" @if((string) ($connection->whmcs_currency_id ?? '') === (string) $currency['id']) selected @endif>{{ $currency['code'] }}</option>
+                                            @endforeach
+                                        </select>
+                                        <label class="sr-only" for="wtp-saved-pnlcs-{{ $connection->id }}">{{ __('whmcs_to_pnlcs.connection.pnlcs_currency') }}</label>
+                                        <select id="wtp-saved-pnlcs-{{ $connection->id }}" name="pnlcs_currency_id" style="max-width:150px">
+                                            @foreach($pnlcsCurrencies as $currency)
+                                                <option value="{{ $currency['id'] }}" @if((string) ($connection->pnlcs_currency_id ?? '') === (string) $currency['id']) selected @endif>{{ $currency['code'] }}</option>
+                                            @endforeach
+                                        </select>
+                                        <button type="submit" class="btn btn-sm btn-secondary">{{ __('whmcs_to_pnlcs.connection.save_currencies') }}</button>
+                                    </form>
+                                @else
+                                    <div class="wtp-note wtp-note--warn" style="margin-top:6px">{{ __('whmcs_to_pnlcs.connection.currency_source_unavailable') }}</div>
+                                @endif
                             </div>
                             <a href="{{ route('admin.whmcs-to-pnlcs.analyze', $connection) }}" class="btn btn-sm btn-primary">{{ __('whmcs_to_pnlcs.open_connection') }}</a>
                         </div>

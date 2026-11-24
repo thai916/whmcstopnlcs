@@ -87,6 +87,53 @@ class SourceAnalyzer
     }
 
     /**
+     * Read-only list of WHMCS currencies for the first wizard page.
+     *
+     * WHMCS versions differ on whether the flag column is called `default`.
+     * Fall back to the first row so the selector is still usable on sources
+     * without a flag; the administrator can override it explicitly.
+     *
+     * @return list<array{id: int, code: string, rate: float, is_default: bool}>
+     */
+    public function currencies(WhmcsConnector $connector, string $prefix = 'tbl'): array
+    {
+        $table = $prefix.'currencies';
+        try {
+            if (! in_array($table, $connector->tables(), true) || ! $connector->readable($table)) {
+                return [];
+            }
+            $columns = array_map(
+                static fn (array $column): string => strtolower((string) $column['name']),
+                $connector->columns($table)
+            );
+            $rows = $connector->all($table);
+        } catch (Throwable) {
+            return [];
+        }
+
+        $hasDefault = in_array('default', $columns, true);
+        $options = [];
+        foreach ($rows as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $options[] = [
+                'id' => $id,
+                'code' => (string) ($row['code'] ?? ('Currency '.$id)),
+                'rate' => (float) ($row['rate'] ?? 0),
+                'is_default' => $hasDefault && ! empty($row['default']),
+            ];
+        }
+
+        if ($options !== [] && ! array_filter($options, static fn (array $row): bool => $row['is_default'])) {
+            $options[0]['is_default'] = true;
+        }
+
+        return $options;
+    }
+
+    /**
      * A catalog entry that names a source column the source table does not have
      * silently imports NULLs. Surface that during analysis instead.
      *

@@ -35,8 +35,9 @@ available.
   `transactions.whmcs_transaction_id`, so no distinct source record collapses
   onto another. Blank WHMCS invoice numbers display the source row ID.
 - **Price provenance.** Product prices keep their original WHMCS currency row
-  and gain a converted shop-currency copy; service prices are converted to the
-  shop currency while original values are retained for audit.
+  and gain a converted copy in the PNLCS currency selected on page 1; service
+  prices are converted to that same currency while original values remain for
+  audit. Rates always come from mapped PNLCS currency rows.
 - **Failed runs are visible.** Batch exceptions mark the run `failed`, record a
   finish time, and surface the last error in the live progress note.
 
@@ -49,7 +50,7 @@ app/Http/Controllers/Admin/WhmcsToPnlcsController.php
 app/Models/WhmcsToPnlcs*.php
 app/Services/WhmcsToPnlcs/*.php
 database/migrations/2026_11_23_00000{1,2,3,4}_*.php
-database/migrations/2026_11_24_000001_*.php
+database/migrations/2026_11_24_00000{1,2}_*.php
 docs/whmcs-to-pnlcs/{README.md,synthetic_source.php,verify.php}
 lang/en/whmcs_to_pnlcs.php
 resources/views/admin/whmcs-to-pnlcs/*.blade.php
@@ -85,8 +86,10 @@ dependencies, or upstream Git history are included.
 
    Use a PHP CLI binary with `pdo_mysql` enabled.
 5. Sign in as a full administrator and open **Utilities → WHMCS to PNLCS**.
-   Save a connection, test it, then follow the wizard. Dry run is the default;
-   a real import starts only after explicit approval.
+   Save a connection, test it to load WHMCS currencies, choose the WHMCS source
+   currency and PNLCS destination currency, then follow the wizard. The pair can
+   be changed later from the saved-connections list on page 1. Dry run is the
+   default; a real import starts only after explicit approval.
 6. Optional: run the disposable regression suite in
    `docs/whmcs-to-pnlcs/README.md`; it needs no live WHMCS connection.
 
@@ -96,7 +99,8 @@ same paths.
 
 ## Wizard
 
-1. **Connect** — host, database, prefix, credentials, TLS mode, CA/SNI, timeout.
+1. **Connect** — host, database, prefix, credentials, TLS mode, CA/SNI, timeout,
+   and the optional WHMCS → PNLCS currency pair.
 2. **Source analysis** — version, readable tables, counts, grants, TLS evidence,
    detected timezone with warning/override, and catalog `schema_issues`.
 3. **Destination & scope** — existing counts, scope groups, batch size, dry run.
@@ -127,7 +131,7 @@ Remove-Item Env:\DB_DATABASE
 & $php artisan route:cache
 ```
 
-Expected result: **79 passed, 0 failed**.
+Expected result: **88 passed, 0 failed**.
 
 See [docs/whmcs-to-pnlcs/README.md](docs/whmcs-to-pnlcs/README.md) for the full
 operating notes, including real-source repair observations.
